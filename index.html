@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔥🚁드론 챔피언 레이스🚁🔥</title>
+<style>
+body {
+  font-family: "Segoe UI", Arial, sans-serif;
+  margin: 20px;
+  background: linear-gradient(135deg, #f0f4f8, #e0ebf5);
+  color: #333;
+}
+
+h1 { text-align: center; font-size: 32px; font-weight: bold; color: #2c3e50; margin-bottom: 20px; }
+
+div { text-align:center; margin:10px 0; }
+input, button {
+  padding: 8px 12px;
+  margin: 5px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+}
+
+button { cursor:pointer; transition: 0.2s; }
+button:hover { opacity: 0.85; }
+
+.start-btn { background-color: #2ecc71; color:white; border:none;}
+.stop-btn { background-color: #e74c3c; color:white; border:none;}
+.delete-btn { background-color: #95a5a6; color:white; border:none;}
+
+table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+th { background: #3498db; color: white; padding: 10px; }
+td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+tr:nth-child(even) { background: #f9f9f9; }
+tr:hover { background: #f1f7fd; }
+
+/* 건의함 스타일 */
+#suggestionBox { display:none; border:1px solid #ccc; padding:10px; margin-top:10px; background:#f9f9f9; width:80%; margin-left:auto; margin-right:auto; }
+#suggestionList { list-style:none; padding-left:0; margin-top:10px; }
+#suggestionList li { margin-bottom:5px; }
+#suggestionInput { width:70%; padding:5px; border-radius:5px; border:1px solid #ccc; }
+#submitSuggestion { padding:5px 10px; border-radius:5px; border:none; background:#3498db; color:white; }
+</style>
+</head>
+<body>
+
+<h1>🔥🚁도개고등학교 드론 챔피언 레이스🚁🔥</h1>
+
+<!-- 참가자 등록 -->
+<div>
+  <input type="text" id="grade" placeholder="학년">
+  <input type="text" id="class" placeholder="반">
+  <input type="text" id="number" placeholder="번호">
+  <input type="text" id="name" placeholder="이름(실명으로 등록)">
+  <button id="addParticipantBtn">등록</button>
+</div>
+
+<!-- 운영자 로그인 -->
+<div>
+  <input type="password" id="adminPassword" placeholder="운영자 비밀번호">
+  <button id="adminLoginBtn">운영자 로그인</button>
+</div>
+
+<!-- 참가자 테이블 -->
+<table id="participantTable">
+  <thead>
+    <tr>
+      <th>학년</th>
+      <th>반</th>
+      <th>번호</th>
+      <th>이름</th>
+      <th>기록</th>
+      <th>실시간</th>
+      <th class="admin-only">조작</th>
+      <th class="admin-only">관리</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<!-- 건의함 버튼과 창 -->
+<div style="text-align:center; margin-top:20px;">
+  <button id="openSuggestion">💡 건의함 열기</button>
+</div>
+
+<div id="suggestionBox">
+  <input type="text" id="suggestionInput" placeholder="건의를 작성하세요...">
+  <button id="submitSuggestion">등록</button>
+  <ul id="suggestionList"></ul>
+</div>
+
+<script>
+let participants = JSON.parse(localStorage.getItem("participants")) || {};
+let isAdmin = false;
+let timers = [];
+
+// 저장 함수
+function saveData(){ localStorage.setItem("participants", JSON.stringify(participants)); }
+
+// 시간 포맷
+function formatTime(ms){
+  const sec=Math.floor(ms/1000);
+  const m=Math.floor(sec/60);
+  const s=sec%60;
+  const msPart=ms%1000;
+  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${String(msPart).padStart(3,"0")}`;
+}
+
+function parseTime(str){
+  const [m,rest]=str.split(":");
+  const [s,ms]=rest.split(".");
+  return parseInt(m)*60000 + parseInt(s)*1000 + parseInt(ms);
+}
+
+// 참가자 렌더링
+function renderParticipants(){
+  const tbody=document.querySelector("#participantTable tbody"); 
+  tbody.innerHTML="";
+  const sorted=Object.entries(participants).sort(([idA,a],[idB,b])=>{
+    const minA=a.records.length?Math.min(...a.records.map(r=>parseTime(r))):Infinity;
+    const minB=b.records.length?Math.min(...b.records.map(r=>parseTime(r))):Infinity;
+    return minA-minB;
+  });
+  sorted.forEach(([id,p],index)=>{
+    const tr=document.createElement("tr");
+    let recordDisplay=p.records.join("<br>");
+    tr.innerHTML=`
+      <td>${p.grade}</td>
+      <td>${p.classNum}</td>
+      <td>${p.number}</td>
+      <td>${p.name}</td>
+      <td id="record-${id}">${recordDisplay}</td>
+      <td id="timer-${id}">${p.running?formatTime(Date.now()-p.startTime):""}</td>
+      <td class="admin-only">
+        <button class="start-btn" onclick="startTimer('${id}')">시작</button>
+        <button class="stop-btn" onclick="stopTimer('${id}')">정지</button>
+      </td>
+      <td class="admin-only">
+        <button class="delete-btn" onclick="deleteParticipant('${id}')">삭제</button>
+      </td>
+    `;
+    const top3Colors=["#FFD700","#C0C0C0","#CD7F32"];
+    const minRecord=p.records.length?Math.min(...p.records.map(r=>parseTime(r))):null;
+    if(index<3 && minRecord!==null){ tr.style.backgroundColor=top3Colors[index]; tr.style.fontWeight="bold"; }
+    tbody.appendChild(tr);
+  });
+  document.querySelectorAll(".admin-only").forEach(el=>{el.style.display=isAdmin?"table-cell":"none";});
+}
+
+// 참가자 등록
+document.getElementById("addParticipantBtn").addEventListener("click",()=>{
+  const grade=document.getElementById("grade").value.trim();
+  const classNum=document.getElementById("class").value.trim();
+  const number=document.getElementById("number").value.trim();
+  const name=document.getElementById("name").value.trim();
+  if(!grade||!classNum||!number||!name){ alert("모든 칸을 입력해주세요!"); return; }
+
+  // 중복 검사
+  const exists=Object.values(participants).some(p=>p.grade===grade && p.classNum===classNum && p.number===number);
+  if(exists){ alert("같은 학년/반/번호 참가자가 이미 등록되어 있습니다."); return; }
+
+  const id=Date.now().toString();
+  participants[id]={grade,classNum,number,name,records:[],running:false};
+  saveData(); renderParticipants(); alert(`${name} 참가자 등록 완료!`);
+});
+
+// 운영자 로그인
+document.getElementById("adminLoginBtn").addEventListener("click",()=>{
+  const password=document.getElementById("adminPassword").value;
+  if(password==="robotics2025"){ isAdmin=true; renderParticipants(); alert("운영자 모드로 로그인되었습니다!"); }
+  else{ alert("비밀번호가 올바르지 않습니다."); }
+});
+
+// 타이머
+function startTimer(id){ if(!isAdmin || participants[id].running) return; participants[id].running=true; participants[id].startTime=Date.now();
+  timers[id]=setInterval(()=>{ document.getElementById(`timer-${id}`).textContent=formatTime(Date.now()-participants[id].startTime); },50);
+  renderParticipants();
+}
+
+function stopTimer(id){ if(!isAdmin || !participants[id].running) return; participants[id].running=false;
+  const elapsed=Date.now()-participants[id].startTime;
+  participants[id].records.push(formatTime(elapsed));
+  clearInterval(timers[id]);
+  saveData(); renderParticipants();
+}
+
+// 참가자 삭제
+function deleteParticipant(id){ if(!isAdmin) return;
+  const confirmDelete=confirm(`${participants[id].name} 참가자를 정말 삭제하시겠습니까?`);
+  if(!confirmDelete) return;
+  delete participants[id];
+  saveData(); renderParticipants();
+}
+
+// 초기 렌더링
+renderParticipants();
+
+/////////////////////////
+// 건의함 기능
+/////////////////////////
+let suggestions = JSON.parse(localStorage.getItem("suggestions")) || [];
+
+document.getElementById("openSuggestion").addEventListener("click",()=>{
+  const box = document.getElementById("suggestionBox");
+  box.style.display = box.style.display === "none" ? "block" : "none";
+});
+
+function renderSuggestions(){
+  const list = document.getElementById("suggestionList");
+  list.innerHTML = "";
+  suggestions.forEach((s, index)=>{
+    const li = document.createElement("li");
+    li.textContent = s.text;
+    if(isAdmin){
+      const btn = document.createElement("button");
+      btn.textContent="삭제";
+      btn.style.marginLeft="5px";
+      btn.onclick = ()=>{
+        suggestions.splice(index,1);
+        localStorage.setItem("suggestions",JSON.stringify(suggestions));
+        renderSuggestions();
+      };
+      li.appendChild(btn);
+    }
+    list.appendChild(li);
+  });
+}
+
+document.getElementById("submitSuggestion").addEventListener("click",()=>{
+  const input = document.getElementById("suggestionInput");
+  const text = input.value.trim();
+  if(!text) return;
+  suggestions.push({text});
+  localStorage.setItem("suggestions",JSON.stringify(suggestions));
+  input.value="";
+  renderSuggestions();
+});
+
+renderSuggestions();
+</script>
+
+</body>
+</html>
