@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🔥🚁도개고등학교 드론 챔피언 레이스🚁🔥</title>
+<title>🔥도개고등학교 드론 레이스🔥</title>
 <style>
 body {
   font-family: "Segoe UI", Arial, sans-serif;
@@ -11,44 +11,24 @@ body {
   background: linear-gradient(135deg, #f0f4f8, #e0ebf5);
   color: #333;
 }
-
 h1 { text-align: center; font-size: 32px; font-weight: bold; color: #2c3e50; margin-bottom: 20px; }
-
 div { text-align:center; margin:10px 0; }
-input, button {
-  padding: 8px 12px;
-  margin: 5px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  font-size: 14px;
-}
-
+input, button { padding: 8px 12px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }
 button { cursor:pointer; transition: 0.2s; }
 button:hover { opacity: 0.85; }
-
-.start-btn { background-color: #2ecc71; color:white; border:none;}
-.stop-btn { background-color: #e74c3c; color:white; border:none;}
 .delete-btn { background-color: #95a5a6; color:white; border:none;}
-
+.start-btn { background-color: #2ecc71; color:white; border:none;}
 table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
 th { background: #3498db; color: white; padding: 10px; }
 td { border: 1px solid #ddd; padding: 8px; text-align: center; }
 tr:nth-child(even) { background: #f9f9f9; }
 tr:hover { background: #f1f7fd; }
+.record-input { width: 80px; text-align: center; }
 </style>
 </head>
 <body>
 
-<h1>🔥🚁도개고등학교 드론 챔피언 레이스🚁🔥</h1>
-
-<!-- 참가자 등록 -->
-<div>
-  <input type="text" id="grade" placeholder="학년">
-  <input type="text" id="class" placeholder="반">
-  <input type="text" id="number" placeholder="번호">
-  <input type="text" id="name" placeholder="이름(실명으로 등록)">
-  <button id="addParticipantBtn">등록</button>
-</div>
+<h1>🔥도개고등학교 드론 레이스🔥</h1>
 
 <!-- 운영자 로그인 -->
 <div>
@@ -56,17 +36,25 @@ tr:hover { background: #f1f7fd; }
   <button id="adminLoginBtn">운영자 로그인</button>
 </div>
 
+<!-- 참가자 등록 (운영자 전용) -->
+<div id="registrationDiv" style="display:none;">
+  <input type="text" id="grade" placeholder="학년">
+  <input type="text" id="class" placeholder="반">
+  <input type="text" id="number" placeholder="번호">
+  <input type="text" id="name" placeholder="이름(실명)">
+  <button id="addParticipantBtn">등록</button>
+</div>
+
 <!-- 참가자 테이블 -->
 <table id="participantTable">
   <thead>
     <tr>
+      <th>등수</th>
       <th>학년</th>
       <th>반</th>
       <th>번호</th>
       <th>이름</th>
-      <th>기록</th>
-      <th>실시간</th>
-      <th class="admin-only">조작</th>
+      <th>기록 (mm:ss.SSS)</th>
       <th class="admin-only">관리</th>
     </tr>
   </thead>
@@ -76,20 +64,11 @@ tr:hover { background: #f1f7fd; }
 <script>
 let participants = JSON.parse(localStorage.getItem("participants")) || {};
 let isAdmin = false;
-let timers = [];
 
-// 저장 함수
+// 저장
 function saveData(){ localStorage.setItem("participants", JSON.stringify(participants)); }
 
-// 시간 포맷
-function formatTime(ms){
-  const sec=Math.floor(ms/1000);
-  const m=Math.floor(sec/60);
-  const s=sec%60;
-  const msPart=ms%1000;
-  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${String(msPart).padStart(3,"0")}`;
-}
-
+// 시간 파싱
 function parseTime(str){
   const [m,rest]=str.split(":");
   const [s,ms]=rest.split(".");
@@ -98,55 +77,36 @@ function parseTime(str){
 
 // 참가자 렌더링
 function renderParticipants(){
-  const tbody=document.querySelector("#participantTable tbody"); 
-  tbody.innerHTML="";
-  const sorted=Object.entries(participants).sort(([idA,a],[idB,b])=>{
-    const minA=a.records.length?Math.min(...a.records.map(r=>parseTime(r))):Infinity;
-    const minB=b.records.length?Math.min(...b.records.map(r=>parseTime(r))):Infinity;
-    return minA-minB;
+  const tbody = document.querySelector("#participantTable tbody");
+  tbody.innerHTML = "";
+  const sorted = Object.entries(participants).sort(([idA,a],[idB,b])=>{
+    const minA = a.records.length ? Math.min(...a.records.map(r=>parseTime(r))) : Infinity;
+    const minB = b.records.length ? Math.min(...b.records.map(r=>parseTime(r))) : Infinity;
+    return minA - minB;
   });
-  sorted.forEach(([id,p],index)=>{
-    const tr=document.createElement("tr");
-    let recordDisplay=p.records.join("<br>");
-    tr.innerHTML=`
+  
+  sorted.forEach(([id, p], index)=>{
+    const tr = document.createElement("tr");
+    const recordInputs = p.records.map((r,i)=>`<input class="record-input" type="text" value="${r}" ${isAdmin ? `onchange="updateRecord('${id}', ${i}, this.value)"` : "readonly"}>`).join("<br>");
+    const rank = p.records.length ? index+1 : "-";
+    tr.innerHTML = `
+      <td>${rank}</td>
       <td>${p.grade}</td>
       <td>${p.classNum}</td>
       <td>${p.number}</td>
       <td>${p.name}</td>
-      <td id="record-${id}">${recordDisplay}</td>
-      <td id="timer-${id}">${p.running?formatTime(Date.now()-p.startTime):""}</td>
+      <td>${recordInputs}</td>
       <td class="admin-only">
-        <button class="start-btn" onclick="startTimer('${id}')">시작</button>
-        <button class="stop-btn" onclick="stopTimer('${id}')">정지</button>
-      </td>
-      <td class="admin-only">
-        <button class="delete-btn" onclick="deleteParticipant('${id}')">삭제</button>
+        ${isAdmin ? `<button class="delete-btn" onclick="deleteParticipant('${id}')">삭제</button> <button class="start-btn" onclick="addRecord('${id}')">기록 추가</button>` : ""}
       </td>
     `;
     const top3Colors=["#FFD700","#C0C0C0","#CD7F32"];
-    const minRecord=p.records.length?Math.min(...p.records.map(r=>parseTime(r))):null;
-    if(index<3 && minRecord!==null){ tr.style.backgroundColor=top3Colors[index]; tr.style.fontWeight="bold"; }
+    if(index<3 && p.records.length){ tr.style.backgroundColor=top3Colors[index]; tr.style.fontWeight="bold"; }
     tbody.appendChild(tr);
   });
   document.querySelectorAll(".admin-only").forEach(el=>{el.style.display=isAdmin?"table-cell":"none";});
+  document.getElementById("registrationDiv").style.display = isAdmin ? "block" : "none";
 }
-
-// 참가자 등록
-document.getElementById("addParticipantBtn").addEventListener("click",()=>{
-  const grade=document.getElementById("grade").value.trim();
-  const classNum=document.getElementById("class").value.trim();
-  const number=document.getElementById("number").value.trim();
-  const name=document.getElementById("name").value.trim();
-  if(!grade||!classNum||!number||!name){ alert("모든 칸을 입력해주세요!"); return; }
-
-  // 중복 검사
-  const exists=Object.values(participants).some(p=>p.grade===grade && p.classNum===classNum && p.number===number);
-  if(exists){ alert("같은 학년/반/번호 참가자가 이미 등록되어 있습니다."); return; }
-
-  const id=Date.now().toString();
-  participants[id]={grade,classNum,number,name,records:[],running:false};
-  saveData(); renderParticipants(); alert(`${name} 참가자 등록 완료!`);
-});
 
 // 운영자 로그인
 document.getElementById("adminLoginBtn").addEventListener("click",()=>{
@@ -155,21 +115,37 @@ document.getElementById("adminLoginBtn").addEventListener("click",()=>{
   else{ alert("비밀번호가 올바르지 않습니다."); }
 });
 
-// 타이머
-function startTimer(id){ if(!isAdmin || participants[id].running) return; participants[id].running=true; participants[id].startTime=Date.now();
-  timers[id]=setInterval(()=>{ document.getElementById(`timer-${id}`).textContent=formatTime(Date.now()-participants[id].startTime); },50);
-  renderParticipants();
+// 참가자 등록 (운영자만)
+document.getElementById("addParticipantBtn").addEventListener("click",()=>{
+  if(!isAdmin) { alert("운영자만 참가자를 등록할 수 있습니다."); return; }
+  const grade=document.getElementById("grade").value.trim();
+  const classNum=document.getElementById("class").value.trim();
+  const number=document.getElementById("number").value.trim();
+  const name=document.getElementById("name").value.trim();
+  if(!grade||!classNum||!number||!name){ alert("모든 칸을 입력해주세요!"); return; }
+  const exists=Object.values(participants).some(p=>p.grade===grade && p.classNum===classNum && p.number===number);
+  if(exists){ alert("같은 학년/반/번호 참가자가 이미 등록되어 있습니다."); return; }
+  const id=Date.now().toString();
+  participants[id]={grade,classNum,number,name,records:[]};
+  saveData(); renderParticipants(); alert(`${name} 참가자 등록 완료!`);
+});
+
+// 기록 추가
+function addRecord(id){
+  if(!isAdmin) return;
+  const record = prompt("기록을 mm:ss.SSS 형식으로 입력하세요:");
+  if(record) { participants[id].records.push(record); saveData(); renderParticipants(); }
 }
 
-function stopTimer(id){ if(!isAdmin || !participants[id].running) return; participants[id].running=false;
-  const elapsed=Date.now()-participants[id].startTime;
-  participants[id].records.push(formatTime(elapsed));
-  clearInterval(timers[id]);
-  saveData(); renderParticipants();
+// 기록 수정
+function updateRecord(id, index, value){
+  participants[id].records[index] = value;
+  saveData();
 }
 
 // 참가자 삭제
-function deleteParticipant(id){ if(!isAdmin) return;
+function deleteParticipant(id){ 
+  if(!isAdmin) return;
   const confirmDelete=confirm(`${participants[id].name} 참가자를 정말 삭제하시겠습니까?`);
   if(!confirmDelete) return;
   delete participants[id];
@@ -181,6 +157,4 @@ renderParticipants();
 </script>
 
 </body>
-</html>
-
 </html>
